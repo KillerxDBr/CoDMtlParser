@@ -4,18 +4,27 @@ mtl_file = [0x9A, 0x00, 0x00, 0x00, 0xA7, 0x00, 0x00, 0x00, 0x12, 0x04, 0x01, 0x
 # offsets precisam de mais testes
 COLOR = 0x48
 COLORSTART = int.from_bytes(mtl_file[COLOR:COLOR+4],'little')
-COLOREND = int.from_bytes(mtl_file[COLOR+4:COLOR+8],'little') - 10
+
 NORMAL = 0x54
 NORMALSTART=int.from_bytes(mtl_file[NORMAL:NORMAL+4],'little')
-NORMALEND=int.from_bytes(mtl_file[NORMAL+4:NORMAL+8],'little')-1
+
 SPEC = 0x60
 SPECSTART = int.from_bytes(mtl_file[SPEC:SPEC+4],'little')
-SPECEND = int.from_bytes(mtl_file[SPEC+4:SPEC+8],'little')-1
 
-def toChar(b):
-	return ''.join([chr(x) for x in b])
+def getMtlStrings(offset):
+    string = ''
+    while(mtl_file[offset] != 0x00):
+        #print(chr(mtl_file[offset]))
+        string += chr(mtl_file[offset])
+        offset+=1
+    return string
 
-colorstr = toChar(mtl_file[COLORSTART:COLOREND])
-nmlstr = toChar(mtl_file[NORMALSTART:NORMALEND])
-specstr = toChar(mtl_file[SPECSTART:SPECEND])
+colorstr = getMtlStrings(COLORSTART)
+nmlstr = getMtlStrings(NORMALSTART)
+specstr = getMtlStrings(SPECSTART)
+
 print(f'{colorstr}, {nmlstr}, {specstr}')
+
+teste1 = int.from_bytes(mtl_file[SPEC+4:SPEC+8],'little')		#???
+teste2 = int.from_bytes(mtl_file[SPEC+8:SPEC+12],'little')		#???
+print(teste1,teste2,hex(teste2))
