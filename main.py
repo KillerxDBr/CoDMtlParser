@@ -22,7 +22,7 @@ class MTL:
         self.normal = getMtlStrings(mtl_file,NORMAL)
         self.spec = getMtlStrings(mtl_file,SPEC)
 
-        envMapMin, envMapMax, envMapExponent, sunint = struct.unpack('4f',bytes([int(x) for x in mtl_file[ENVPARAM:ENVPARAM+16]]))
+        envMapMin, envMapMax, self.envMapExponent, sunint = struct.unpack('4f',bytes([int(x) for x in mtl_file[ENVPARAM:ENVPARAM+16]]))
         
         self.envMapMin, self.envMapMax = envMapMin/4, envMapMax/4
 
