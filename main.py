@@ -129,14 +129,24 @@ class MTL:
 
 
 # getting material files from 'materials' directory
-paths = os.listdir( 'materials' )
 
+def bConvert(mtl):
+    print(f'\n--------------------\n')
+    rst = []
+    techset_offset  = struct.unpack('i', mtl[TECHSET:TECHSET+4])[0]
+    for i in range(0,techset_offset,4):
+        rst.append(struct.unpack('i', mtl[i:i+4])[0])
+    print(rst)
+    # print(f'\n--------------------\n')
+
+paths = os.listdir( 'materials' )
 mtl_classe = []
 for mtlpath in paths:
     mtl = ''
     with open(f'materials/{mtlpath}','rb') as f:
         mtl = f.read()
         mtl_classe.append(MTL(mtl))
+        # bConvert(mtl)
 
 for mtl in mtl_classe:
     print(mtl.toGDT())
