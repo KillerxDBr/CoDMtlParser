@@ -18,6 +18,7 @@ TECHSET_FLAGS = {
 
 # Change it here if you want :)
 # i.e. _spc and _cos
+SURFACETYPE = '<error>'
 SPEC_SUFFIX  = '_s'
 GLOSS_SUFFIX = '_g'
 
@@ -57,7 +58,7 @@ class MTL:
 
         # todo
         # Check if WaW envMapParms is different
-
+    
     def __str__(self):
         return (f'\n------------------\n'
                 f'Material: {self.mtl_name}\n'
@@ -84,6 +85,41 @@ class MTL:
         for flag, value in TECHSET_FLAGS.items():
             tsarg.update({flag:(value in self.techset)})
         return tsarg
+
+    def toGDT(self):
+        path = f'texture_assets\\\\CoD4\\\\{self.mtl_name}\\\\'
+        string = (
+            f'\t"{self.mtl_name}" ( "material.gdf" )\n'
+            f'\t{{\n'
+            f'\t\t"template" "material.template"\n'
+		    f'\t\t"materialType" "model phong"\n'
+            f'\t\t"surfaceType" "{SURFACETYPE}"\n'
+            f'\t\t"envMapMin" "{self.envMapMin}"\n'
+		    f'\t\t"envMapMax" "{self.envMapMax}"\n'
+		    f'\t\t"envMapExponent" "{self.envMapExponent}"\n'
+            f'\t\t"colorMap" "{path}{self.color}.tga"\n'
+        )
+        if self.techsetArgs['NORMAL']:
+            if self.normal.lower() == "$identityNormalMap".lower():
+                string += f'\t\t"normalMap" "$identityNormalMap"\n'
+            else:
+                string += f'\t\t"normalMap" "{path}{self.normal}.tga"\n'
+        if self.techsetArgs['SPEC']:
+            string +=(
+                f'\t\t"specColorMap" "{path}{self.spec}.tga"\n'
+		        f'\t\t"cosinePowerMap" "{path}{self.gloss}.tga"\n')
+        if self.techsetArgs['REPLACE']:
+            string += (f'\t\t"blendFunc" "Replace*"\n'
+                       f'\t\t"depthWrite" "<auto>*"\n')
+        elif self.techsetArgs['BLEND']:
+            string += (f'\t\t"blendFunc" "Blend"\n'
+                       f'\t\t"depthWrite" "On"\n')
+        if self.techsetArgs['ALPHATEST']:
+            string += f'\t\t"alphaTest" "GE128"\n'
+        else:
+            string += f'\t\t"alphaTest" "Always*"\n'
+        string += f'\t}}\n'
+        return string
     
 
 # parser = argparse.ArgumentParser()
@@ -103,6 +139,6 @@ for mtlpath in paths:
         mtl_classe.append(MTL(mtl))
 
 for mtl in mtl_classe:
-    print(mtl.__str__())
+    print(mtl.toGDT())
 
 print()
