@@ -1,14 +1,13 @@
 import os
 import struct
 import argparse
-import json
 
 # Constants
 COLOR    = 0x48
 NORMAL   = 0x54
 SPEC     = 0x60
 ENVPARAM = 0x6C
-
+TECHSET  = 0x34
 TECHSET_FLAGS = {
     'COLOR'     : "c0",
     'NORMAL'    : "n0",
@@ -29,7 +28,7 @@ class MTL:
 
         # Offsets
         mtl_name_offset = struct.unpack('i', mtl_file[0:4])[0]
-        techset_offset  = struct.unpack('i', mtl_file[0x34:0x34+4])[0]
+        techset_offset  = struct.unpack('i', mtl_file[TECHSET:TECHSET+4])[0]
         color_offset    = struct.unpack('i', mtl_file[COLOR:COLOR+4])[0]
         normal_offset   = struct.unpack('i', mtl_file[NORMAL:NORMAL+4])[0]
         spec_offser     = struct.unpack('i', mtl_file[SPEC:SPEC+4])[0]
@@ -37,7 +36,7 @@ class MTL:
         # Texture Names
         self.mtl_name    = self.getMtlString(mtl_file, mtl_name_offset)
         self.techset     = self.getMtlString(mtl_file, techset_offset)
-        self.techsetArgs = self.getTechsetArgs(self.techset)
+        self.techsetArgs = self.getTechsetArgs()
         self.color       = self.getMtlString(mtl_file, color_offset)
         self.normal      = self.getMtlString(mtl_file, normal_offset)
         self.raw_spec    = self.getMtlString(mtl_file, spec_offser)
@@ -63,6 +62,7 @@ class MTL:
         return (f'\n------------------\n'
                 f'Material: {self.mtl_name}\n'
                 f'Techset: {self.techset}\n'
+                f'Techset Args: {[flag for flag, value in self.techsetArgs.items() if value]}\n'
                 f'Color Map: {self.color}\n'
                 f'Normal Map: {self.normal}\n'
                 f'Raw Specular Map: {self.raw_spec}\n'
@@ -79,8 +79,11 @@ class MTL:
             offset+=1
         return string
     
-    def getTechsetArgs(self,ts):
-        pass
+    def getTechsetArgs(self):
+        tsarg = {}
+        for flag, value in TECHSET_FLAGS.items():
+            tsarg.update({flag:(value in self.techset)})
+        return tsarg
     
 
 # parser = argparse.ArgumentParser()
