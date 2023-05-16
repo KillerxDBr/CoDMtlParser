@@ -197,3 +197,4 @@ pyrightconfig.json
 materials/*
 miscfiles/*
 material_properties/*
+*.db

@@ -1,6 +1,7 @@
 import os
 import struct
 import argparse
+import sqlite3
 
 # Constants
 COLOR     = 0x48
@@ -19,13 +20,25 @@ TECHSET_FLAGS = {
 
 # Change it here if you want :)
 # i.e. _spc and _cos
-SURFACETYPE = '<error>'
+SURFACETYPE  = '<error>'
 SPEC_SUFFIX  = '_s'
 GLOSS_SUFFIX = '_g'
 
+DATABASE = 'mtl.db'
+
+createTable = not os.path.exists(DATABASE)
+
+db = sqlite3.connect(DATABASE)
+cur = db.cursor()
+res = cur.execute("SELECT name FROM sqlite_master")
+if res.fetchone() is None:
+    createTable = True
+if createTable:
+    cur.execute('create table materials(raw_spec,spec,gloss,normal,material)')
+
 class MTL:   
     def __init__(self,mtl_file):
-
+        self.duplicate = False
         # Based on CoD 4 Assets
 
         # Offsets
@@ -40,12 +53,35 @@ class MTL:
         self.techset     = self.getMtlString(mtl_file, techset_offset)
         self.techsetArgs = self.getTechsetArgs()
         self.color       = self.getMtlString(mtl_file, color_offset)
-        self.normal      = self.getMtlString(mtl_file, normal_offset)
+        self.normal           = self.getMtlString(mtl_file, normal_offset)
         self.raw_spec    = self.getMtlString(mtl_file, spec_offset)
 
         # Names for conversion
-        self.spec       = '_'.join(self.raw_spec.split('&')[0].strip('~').split('_')[:-1]) + SPEC_SUFFIX
-        self.gloss      = self.spec[:-2] + GLOSS_SUFFIX
+        spec       = '_'.join(self.raw_spec.split('&')[0].strip('~').split('_')[:-1]) + SPEC_SUFFIX
+        gloss      = spec[:-2] + GLOSS_SUFFIX
+
+        rst = cur.execute('select normal from materials')
+        for n in rst.fetchall():
+            self.duplicateNormal = self.normal in n
+            if self.duplicateNormal:
+                rst = cur.execute('select material from materials where normal=?', [self.normal])
+                self.normalDuplicate = rst.fetchone()
+                break
+        
+        rst = cur.execute('select raw_spec from materials')
+        for t in rst.fetchall():
+            self.duplicate = self.raw_spec in t
+            if self.duplicate:
+                break;
+
+        if self.duplicate:
+            rst = cur.execute('select material, spec, gloss from materials where raw_spec=?', [self.raw_spec])
+            self.duplicatePath, self.spec, self.gloss = rst.fetchone()
+        else:
+            self.spec  = spec
+            self.gloss = gloss
+            cur.execute('insert into materials values(?, ?, ?, ?, ?)', (self.raw_spec, self.spec, self.gloss,self.normal,self.mtlName)) 
+            db.commit()
 
         # sunint: UNUSED, value calculated in asset manager compile
         # from file: Cod4Root/deffiles/materials/mtl_phong.template
@@ -67,7 +103,7 @@ class MTL:
                 f'Techset: {self.techset}\n'
                 f'Techset Args: {[flag for flag, value in self.techsetArgs.items() if value]}\n'
                 f'Color Map: {self.color}\n'
-                f'Color Tint: R: {self.colorTint[0]:.1f} G: {self.colorTint[1]:.1f} B: {self.colorTint[2]:.1f} A: {self.colorTint[3]:.1f}\n'
+                f'Color Tint(RGB Float): R: {self.colorTint[0]:.1f} G: {self.colorTint[1]:.1f} B: {self.colorTint[2]:.1f} A: {self.colorTint[3]:.1f}\n'
                 f'Normal Map: {self.normal}\n'
                 f'Raw Specular Map: {self.raw_spec}\n'
                 f'Specular Map: {self.spec}\n'
@@ -89,7 +125,6 @@ class MTL:
             tsarg.update({flag:(value in self.techset)})
         return tsarg
     
-    # Add Color Tint parameter to GDT ----------------
     def toGDT(self):
         path = f'texture_assets\\\\CoD4\\\\{self.mtlName}\\\\'
         string = (
@@ -102,16 +137,25 @@ class MTL:
 		    f'\t\t"envMapMax" "{self.envMapMax}"\n'
 		    f'\t\t"envMapExponent" "{self.envMapExponent}"\n'
             f'\t\t"colorMap" "{path}{self.color}.tga"\n'
+            f'\t\t"colorTint" "{self.colorTint[0]:.6f} {self.colorTint[1]:.6f} {self.colorTint[2]:.6f} {self.colorTint[3]:.6f}"\n'
         )
         if self.techsetArgs['NORMAL']:
             if self.normal.lower() == "$identityNormalMap".lower():
                 string += f'\t\t"normalMap" "$identityNormalMap"\n'
             else:
-                string += f'\t\t"normalMap" "{path}{self.normal}.tga"\n'
+                if self.normalDuplicate:
+                    string += f'\t\t"normalMap" "texture_assets\\\\CoD4\\\\{self.normalDuplicate}\\\\{self.normal}.tga"\n'
+                else:
+                    string += f'\t\t"normalMap" "{path}{self.normal}.tga"\n'
         if self.techsetArgs['SPEC']:
-            string +=(
-                f'\t\t"specColorMap" "{path}{self.spec}.tga"\n'
-		        f'\t\t"cosinePowerMap" "{path}{self.gloss}.tga"\n')
+            if self.duplicate:
+                string +=(
+                    f'\t\t"specColorMap" "texture_assets\\\\CoD4\\\\{self.duplicatePath}\\\\{self.spec}.tga"\n'
+		            f'\t\t"cosinePowerMap" "texture_assets\\\\CoD4\\\\{self.duplicatePath}\\\\{self.gloss}.tga"\n')
+            else:
+                string +=(
+                    f'\t\t"specColorMap" "{path}{self.spec}.tga"\n'
+		            f'\t\t"cosinePowerMap" "{path}{self.gloss}.tga"\n')
         if self.techsetArgs['REPLACE']:
             string += (f'\t\t"blendFunc" "Replace*"\n'
                        f'\t\t"depthWrite" "<auto>*"\n')
@@ -131,7 +175,6 @@ class MTL:
 # args = parser.parse_args()
 # mtl_file = args.input
 
-
 # getting material files from 'materials' directory
 
 def bConvert(mtl, btype='i', step = 4):
@@ -149,13 +192,16 @@ for mtlpath in paths:
     mtl = ''
     with open(f'materials/{mtlpath}','rb') as f:
         mtl = f.read()
+        f.close()
     mtl_classe.append(MTL(mtl))
     # print(f'\n{mtl_classe[-1].mtlName}\n'
     #       f'Float\n{bConvert(mtl,"f")}\n'
     #       f'{"-"*50}'
     #       f'\nInt\n{bConvert(mtl,"i")}')
 
-for mtl in mtl_classe:
-    print(mtl.__str__())
+# for mtl in mtl_classe:
+#     print(mtl.toGDT())
 
 # print(mtl_classe[0].__str__())
+
+db.close()
