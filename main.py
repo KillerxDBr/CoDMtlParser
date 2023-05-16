@@ -130,13 +130,13 @@ class MTL:
 
 # getting material files from 'materials' directory
 
-def bConvert(mtl):
-    print(f'\n--------------------\n')
+def bConvert(mtl, btype='i', step = 4):
+    # print(f'\n--------------------\n')
     rst = []
     techset_offset  = struct.unpack('i', mtl[TECHSET:TECHSET+4])[0]
-    for i in range(0,techset_offset,4):
-        rst.append(struct.unpack('i', mtl[i:i+4])[0])
-    print(rst)
+    for i in range(0,techset_offset,step):
+        rst.append(struct.unpack(btype, mtl[i:i+4])[0])
+    return rst
     # print(f'\n--------------------\n')
 
 paths = os.listdir( 'materials' )
@@ -145,10 +145,13 @@ for mtlpath in paths:
     mtl = ''
     with open(f'materials/{mtlpath}','rb') as f:
         mtl = f.read()
-        mtl_classe.append(MTL(mtl))
-        # bConvert(mtl)
+    mtl_classe.append(MTL(mtl))
+    print(f'\n{mtl_classe[-1].mtl_name}\n')
+    print(f'Float\n{bConvert(mtl,"f")}\n'
+          f'{"-"*50}'
+          f'\nInt\n{bConvert(mtl,"i")}')
 
-for mtl in mtl_classe:
-    print(mtl.toGDT())
+# for mtl in mtl_classe:
+#     print(mtl.toGDT())
 
 print()
