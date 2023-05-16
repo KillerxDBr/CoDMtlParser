@@ -60,13 +60,14 @@ class MTL:
         spec       = '_'.join(self.raw_spec.split('&')[0].strip('~').split('_')[:-1]) + SPEC_SUFFIX
         gloss      = spec[:-2] + GLOSS_SUFFIX
 
-        rst = cur.execute('select normal from materials')
-        for n in rst.fetchall():
-            self.duplicateNormal = self.normal in n
-            if self.duplicateNormal:
-                rst = cur.execute('select material from materials where normal=?', [self.normal])
-                self.normalDuplicate = rst.fetchone()
-                break
+        if self.normal.lower() != "$identityNormalMap".lower():
+            rst = cur.execute('select normal from materials')
+            for n in rst.fetchall():
+                self.duplicateNormal = self.normal in n
+                if self.duplicateNormal:
+                    rst = cur.execute('select material from materials where normal=?', [self.normal])
+                    self.normalDuplicate = rst.fetchone()
+                    break
         
         rst = cur.execute('select raw_spec from materials')
         for t in rst.fetchall():
