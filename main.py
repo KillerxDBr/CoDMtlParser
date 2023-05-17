@@ -34,11 +34,12 @@ res = cur.execute("SELECT name FROM sqlite_master")
 if res.fetchone() is None:
     createTable = True
 if createTable:
-    cur.execute('create table materials(raw_spec,spec,gloss,normal,material)')
+    cur.execute('create table specgloss(raw_spec,spec,gloss,sg_material)')
+    cur.execute('create table normals(normal,nml_material)')
 
 class MTL:   
     def __init__(self,mtl_file):
-        self.duplicate = False
+        self.duplicate, self.duplicateNormal = False, False
         # Based on CoD 4 Assets
 
         # Offsets
@@ -61,27 +62,33 @@ class MTL:
         gloss      = spec[:-2] + GLOSS_SUFFIX
 
         if self.normal.lower() != "$identityNormalMap".lower():
-            rst = cur.execute('select normal from materials')
+            rst = cur.execute('select normal from normals')
             for n in rst.fetchall():
                 self.duplicateNormal = self.normal in n
                 if self.duplicateNormal:
-                    rst = cur.execute('select material from materials where normal=?', [self.normal])
-                    self.normalDuplicate = rst.fetchone()
                     break
+            if self.duplicateNormal:
+                rst = cur.execute('select nml_material from normals where normal=?', [self.normal])
+                self.normalDuplicate = rst.fetchone()
+            else:                                    # create table normals(normal, nml_material)
+                rst = cur.execute('insert into normals values(?, ?)', [self.normal, self.mtlName])
+
+
         
-        rst = cur.execute('select raw_spec from materials')
+        rst = cur.execute('select raw_spec from specgloss')
         for t in rst.fetchall():
             self.duplicate = self.raw_spec in t
             if self.duplicate:
                 break;
 
         if self.duplicate:
-            rst = cur.execute('select material, spec, gloss from materials where raw_spec=?', [self.raw_spec])
+            rst = cur.execute('select sg_material, spec, gloss from specgloss where raw_spec=?', [self.raw_spec])
             self.duplicatePath, self.spec, self.gloss = rst.fetchone()
         else:
             self.spec  = spec
             self.gloss = gloss
-            cur.execute('insert into materials values(?, ?, ?, ?, ?)', (self.raw_spec, self.spec, self.gloss,self.normal,self.mtlName)) 
+                                                 # create table specgloss(raw_spec,      spec,      gloss,  sg_material)
+            cur.execute('insert into specgloss values(?, ?, ?, ?)', (self.raw_spec, self.spec, self.gloss, self.mtlName)) 
             db.commit()
 
         # sunint: UNUSED, value calculated in asset manager compile
@@ -105,6 +112,7 @@ class MTL:
                 f'Techset Args: {[flag for flag, value in self.techsetArgs.items() if value]}\n'
                 f'Color Map: {self.color}\n'
                 f'Color Tint(RGB Float): R: {self.colorTint[0]:.1f} G: {self.colorTint[1]:.1f} B: {self.colorTint[2]:.1f} A: {self.colorTint[3]:.1f}\n'
+                f'Color Tint(RGB Int): R: {self.colorTint[0]*255:.0f} G: {self.colorTint[1]*255:.0f} B: {self.colorTint[2]*255:.0f} A: {self.colorTint[3]*255:.0f}\n'
                 f'Normal Map: {self.normal}\n'
                 f'Raw Specular Map: {self.raw_spec}\n'
                 f'Specular Map: {self.spec}\n'
