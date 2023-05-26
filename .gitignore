@@ -200,3 +200,4 @@ material_properties/*
 *.db
 sketch.py
 query.py
+iniciateDB.py
