@@ -198,3 +198,5 @@ materials/*
 miscfiles/*
 material_properties/*
 *.db
+sketch.py
+query.py

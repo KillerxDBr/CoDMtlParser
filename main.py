@@ -7,7 +7,7 @@ import sqlite3
 COLOR     = 0x48
 NORMAL    = 0x54
 SPEC      = 0x60
-ENVPARAM  = 0x6C
+ENVPARAM  = 0x68
 COLORTINT = 0x7C
 TECHSET   = 0x34
 TECHSET_FLAGS = {
@@ -20,7 +20,7 @@ TECHSET_FLAGS = {
 
 # Change it here if you want :)
 # i.e. _spc and _cos
-SURFACETYPE  = '<error>'
+SURFACETYPE  = '<none>'
 SPEC_SUFFIX  = '_s'
 GLOSS_SUFFIX = '_g'
 
@@ -36,6 +36,18 @@ if res.fetchone() is None:
 if createTable:
     cur.execute('create table specgloss(raw_spec,spec,gloss,sg_material)')
     cur.execute('create table normals(normal,nml_material)')
+
+class NML:
+    def __init__(self, mtlName, normal):
+        self.mtlName = mtlName
+        self.normal  = normal
+
+class SPECGLOSS:
+    def __init__(self, mtlName, rawSpec):
+        self.mtlName = mtlName
+        self.rawSpec = rawSpec
+        self.spec    = '_'.join(rawSpec.split('&')[0].strip('~').split('_')[:-1]) + SPEC_SUFFIX
+        self.gloss   = self.spec[:-2] + GLOSS_SUFFIX
 
 class MTL:
     def __init__(self,mtl_file):
@@ -60,8 +72,8 @@ class MTL:
         self.raw_spec    = self.getMtlString(mtl_file, spec_offset)
 
         # Names for conversion
-        spec       = '_'.join(self.raw_spec.split('&')[0].strip('~').split('_')[:-1]) + SPEC_SUFFIX
-        gloss      = spec[:-2] + GLOSS_SUFFIX
+        spec    = '_'.join(self.raw_spec.split('&')[0].strip('~').split('_')[:-1]) + SPEC_SUFFIX
+        gloss   = spec[:-len(SPEC_SUFFIX)] + GLOSS_SUFFIX
 
         if self.normal.lower() != "$identityNormalMap".lower():
             rst = cur.execute('select normal from normals')
@@ -107,7 +119,7 @@ class MTL:
         # todo
         # Check if WaW envMapParms is different
     
-    def __str__(self):
+    def __repr__(self):
         return (f'\n------------------\n'
                 f'Material: {self.mtlName}\n'
                 f'Techset: {self.techset}\n'
@@ -121,19 +133,19 @@ class MTL:
                 f'Glossiness Map: {self.gloss}\n'
                 f'EnvMapArgs: Min: {self.envMapMin} Max: {self.envMapMax} Exp: {self.envMapExponent}')
     
-    def getMtlString(self,mtl,offset):
+    def getMtlString(self, mtl, offset):
         # print(offset)
         string = ''
-        while(mtl[offset] != 0x00):
-            #print(chr(mtl_file[offset]))
+        while (mtl[offset] != 0x00):
+            # print(chr(mtl_file[offset]))
             string += chr(mtl[offset])
-            offset+=1
+            offset += 1
         return string
     
     def getTechsetArgs(self):
         tsarg = {}
         for flag, value in TECHSET_FLAGS.items():
-            tsarg.update({flag:(value in self.techset)})
+            tsarg.update({flag: (value in self.techset)})
         return tsarg
     
     def toGDT(self):
@@ -179,42 +191,34 @@ class MTL:
             string += f'\t\t"alphaTest" "Always*"\n'
         string += f'\t}}\n'
         return string
-
-def main():
-
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('-i','--input',type=str,help='input material file')
-    # args = parser.parse_args()
-    # mtl_file = args.input
-
-    # getting material files from 'materials' directory
-
-    def bConvert(mtl, btype='i', step = 4):
-        # print(f'\n--------------------\n')
-        rst = []
-        techset_offset  = struct.unpack('i', mtl[TECHSET:TECHSET+4])[0]
-        for i in range(0,techset_offset,step):
-            rst.append(struct.unpack(btype, mtl[i:i+4])[0])
-        return rst
-        # print(f'\n--------------------\n')
-
-    paths = os.listdir( 'materials' )
-    mtl_classe = []
+    
+# getting material files from 'materials' directory
+def parseFromFolder(folder='materials'):
+    paths = os.listdir(folder)
+    mtl_arr = []
     for mtlpath in paths:
         mtl = ''
-        with open(f'materials/{mtlpath}','rb') as f:
+        with open(f'materials/{mtlpath}', 'rb') as f:
             mtl = f.read()
-            f.close()
-        mtl_classe.append(MTL(mtl))
-        # print(f'\n{mtl_classe[-1].mtlName}\n'
-        #       f'Float\n{bConvert(mtl,"f")}\n'
-        #       f'{"-"*50}'
-        #       f'\nInt\n{bConvert(mtl,"i")}')
+        mtl_arr.append(MTL(mtl))
+    return mtl_arr
 
-    # for mtl in mtl_classe:
-    #     print(mtl.toGDT())
 
-    # print(mtl_classe[0].__str__())
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', '--input', type=str, help='input material file')
+    args = parser.parse_args()
+    mtl_file = args.input
+    if mtl_file is None:
+        fold = parseFromFolder()
+        for mtl in fold:
+            print(mtl)
+    else:
+        with open(mtl_file, 'rb') as f:
+            mtl = f.read()
+
+        parsedFile = MTL(mtl)
+        print(parsedFile)
 
     db.close()
 
