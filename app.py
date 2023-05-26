@@ -12,7 +12,7 @@ from ttkbootstrap.scrolled import ScrolledFrame
 from sqlalchemy import asc, desc
 from Models.base import Model
 from Models.materials import Material, Normal, SpecGloss
-from newmain import session, BASE_DIR, DB_NAME, engine
+from main import session, BASE_DIR, DB_NAME, engine
 
 # Misc
 from kxdconstants import * # Check this file to edit surface type and spec gloss suffix
