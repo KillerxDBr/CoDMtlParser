@@ -18,9 +18,9 @@ from main import session, BASE_DIR, DB_NAME, engine
 # Check this file to edit surface type and spec gloss suffix
 from kxdconstants import *
 
-if not os.path.exists(f'{BASE_DIR}\\{DB_NAME}'):
-    Model.metadata.create_all(engine)
+Model.metadata.create_all(engine)
 
+if not Normal.query.filter(Normal.Name == '$identitynormalmap').first():
     identity      = Normal()
     identity.Name = '$identitynormalmap'
     identity.Path = 'Default Image'
@@ -56,17 +56,18 @@ class MaterialMaker:
         envpars     = json.loads(mtl.EnvMapParms)
         colorTint   = json.loads(mtl.ColorTint)
         techsetArgs = json.loads(mtl.TechsetArgs)
+        mtlType = 'model' if mtl.Name[:4] == 'mtl_' else 'world'
         string = (
             f'\t"{mtl.Name}" ( "material.gdf" )\n'
             f'\t{{\n'
             f'\t\t"template" "material.template"\n'
-            f'\t\t"materialType" "model phong"\n'
+            f'\t\t"materialType" "{mtlType} phong"\n'
             f'\t\t"surfaceType" "{SURFACETYPE}"\n'
             f'\t\t"envMapMin" "{envpars[0]}"\n'
             f'\t\t"envMapMax" "{envpars[1]}"\n'
             f'\t\t"envMapExponent" "{envpars[2]}"\n'
             f'\t\t"colorMap" "{path}{mtl.ColorMap}.tga"\n'
-            f'\t\t"colorTint" "{colorTint[0]:.6f} {colorTint[1]:.6f} {colorTint[2]:.6f} {colorTint[3]:.6f}"\n'
+            f'\t\t"colorTint" "{colorTint[0]} {colorTint[1]} {colorTint[2]} {colorTint[3]}"\n'
         )
         if techsetArgs['NORMAL']:
             string += f'\t\t"normalMap" "{pathNormal}{mtl.NormalMap.Name}.tga"\n'
@@ -91,6 +92,7 @@ class MaterialMaker:
 
     @classmethod
     def MaterialMaker(cls, materialFile):
+        commit = False
         # Offsets
         mtlName_offset = struct.unpack('i', materialFile[0:4])[0]
         techset_offset = struct.unpack('i', materialFile[TECHSET:TECHSET+4])[0]
@@ -115,6 +117,7 @@ class MaterialMaker:
             sg.Materials.append(newMtl)
             # newMtl.RawSpecMap = sg
         else:
+            commit = True
             # Names for conversion
             spec = '_'.join(raw_spec.split('&')[0].strip(
                 '~').split('_')[:-1]) + SPEC_SUFFIX
@@ -132,6 +135,7 @@ class MaterialMaker:
             nml.Materials.append(newMtl)
             # newMtl.Normal_Id = nml.Id
         else:
+            commit = True
             newMtl.NormalMap = Normal(
                 Name = normal,
                 Path = newMtl.Name
@@ -142,42 +146,50 @@ class MaterialMaker:
 
         if envMapMin > envMapMax:
             raise Exception(
-                f'envMapMin maior que envMapMax: {envMapMin} > {envMapMax}')
+                f'envMapMin maior que envMapMax: {envMapMin:.2f} > {envMapMax:.2f}')
 
-        envMapMin, envMapMax = envMapMin/4, envMapMax/4
+        # envMapMin, envMapMax = envMapMin/4, envMapMax/4
         newMtl.EnvMapParms = json.dumps(
             (round(envMapMin/4, 2), round(envMapMax/4, 2), round(envMapExponent, 2)))
 
         newMtl.ColorTint = json.dumps(struct.unpack('4f', bytes(
             [int(x) for x in materialFile[COLORTINT:COLORTINT+16]])))
 
-        return newMtl
+        return newMtl, commit
 
 
 class ListScroll(ttk.Frame):
-    def __init__(self, master=None, **kw):
-        super(ListScroll, self).__init__(master, **kw)
+    def __init__(self, master=None, **kwargs):
+        super(ListScroll, self).__init__(master, **kwargs)
 
         self.entry_search = ttk.Entry(master=self)
-        self.entry_search.grid(column=0, row=0, padx=10,
-                               pady=10, sticky='news')
+        self.entry_search.grid(
+            column = 0,
+            row    = 0,
+            sticky = 'ew',
+            pady   = 10)
         self.entry_search.bind('<KeyRelease>', self.searchApply)
 
         self.scrFrame = ScrolledFrame(master=self, autohide=False)
-        self.scrFrame.grid(sticky='news', column=0, padx=10, pady=10, row=1)
+        self.scrFrame.grid(sticky='news', column=0, pady=10, row=1)
 
         self.expDelFrame = ttk.Frame(master=self)
-        self.expDelFrame.grid(column=0, row=2, padx=10, pady=10, sticky='news')
+        self.expDelFrame.grid(column=0, row=2, sticky='news')
 
-        self.exportButton = ttk.Button(master=self.expDelFrame,
-            text='Export Materials', command=self.exportMtls, bootstyle=(SUCCESS, OUTLINE))
-        self.exportButton.grid(column=0, row=0, padx=20,
-                               pady=20, sticky='news')
+        self.exportButton = ttk.Button(
+            master    = self.expDelFrame,
+            text      = 'Export Materials',
+            command   = self.exportMtls,
+            bootstyle = (SUCCESS, OUTLINE))
+        self.exportButton.grid(column=0, row=0, padx=(20,10),
+                               pady=(10,0), sticky='ew')
 
-        self.deleteButton = ttk.Button(master=self.expDelFrame,
-                                       text='Delete Materials', bootstyle=(DANGER, OUTLINE))
-        self.deleteButton.grid(column=1, row=0, padx=20,
-                               pady=20, sticky='news')
+        self.deleteButton = ttk.Button(
+            master    = self.expDelFrame,
+            text      = 'Delete Materials',
+            bootstyle = (DANGER, OUTLINE))
+        self.deleteButton.grid(column=1, row=0, padx=(10,20),
+                               pady=(10,0), sticky='ew')
 
     def exportMtls(self):
         gdtResult = '{\n'
@@ -210,31 +222,36 @@ class ListScroll(ttk.Frame):
 
 
 class App(ttk.Window):
-    def __init__(self, title="ttkbootstrap", themename="litera", iconphoto='', size=None, position=None,
-                 minsize=None, maxsize=None, resizable=None, hdpi=True, scaling=None, transient=None,
-                 overrideredirect=False, alpha=1):
-        super().__init__(title, themename, iconphoto, size, position, minsize,
-                         maxsize, resizable, hdpi, scaling, transient, overrideredirect, alpha)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
         self.frame = ttk.Frame(self)
         self.frame.pack()
 
         self.rbVar = IntVar(value=0)
-        self.rdBtnSingle = ttk.Radiobutton(master=self.frame, variable=self.rbVar, value=0, text='Single File')
-        self.rdBtnSingle.grid(column=0, row=0, padx=10, pady=10)
+        self.rdBtnSingle = ttk.Radiobutton(
+            master   = self.frame,
+            variable = self.rbVar,
+            value    = 0,
+            text     = 'Single File')
+        self.rdBtnSingle.grid(column=0, row=0, padx=10, pady=10, sticky='news')
 
-        self.rdBtnMulti = ttk.Radiobutton(master=self.frame, variable=self.rbVar, value=1, text='Folder')
-        self.rdBtnMulti.grid(column=1, row=0, padx=10, pady=10)
+        self.rdBtnMulti = ttk.Radiobutton(
+            master   = self.frame,
+            variable = self.rbVar,
+            value    = 1,
+            text     = 'Folder')
+        self.rdBtnMulti.grid(column=1, row=0, padx=10, pady=10, sticky='news')
 
         self.selectFile = ttk.Button(
             master    = self.frame,
             text      = '...',
             bootstyle = (SECONDARY, OUTLINE),
-            command   = self.selectFileDialog
-        )
-        self.selectFile.grid(column=0, row=1, padx=10, pady=10)
+            command   = self.selectFileDialog)
+        self.selectFile.grid(column=2, row=0, padx=10, pady=10, sticky='ew')
 
         self.listScr = ListScroll(master=self.frame)
-        self.listScr.grid(column=2, row=0, rowspan=6, padx=20, pady=20)
+        self.listScr.grid(column=3, row=0, rowspan=10, padx=(10, 20), pady=10)
 
         self.listScr.canvasPopulation(
             Material.query.order_by(Material.Name).all())
@@ -243,22 +260,18 @@ class App(ttk.Window):
         try:
             if self.rbVar.get():
                 dir = filedialog.askdirectory(initialdir=BASE_DIR)
-                mtls = []
                 for fname in os.listdir(dir):
                     with open(f'{dir}/{fname}', 'rb') as f:
                         fread = f.read()
                         if fname != MaterialMaker.getMtlString(fread, struct.unpack('i', fread[0:4])[0]):
                             continue
-                        m = MaterialMaker.MaterialMaker(fread)
-                        if m:
-                            mtls.append(m)
-                if mtls:
-                    session.add_all(mtls)
-                    session.commit()
-                    self.listScr.searchApply()
-                else:
-                    messagebox.showwarning(
-                        title='Erro', message=f"Nenhum material cadastrado!!!")
+                        material, commit = MaterialMaker.MaterialMaker(fread)
+                        if material:
+                            session.add(material)
+                            if commit:
+                                session.commit()
+                session.commit()
+                self.listScr.searchApply()
             else:
                 with filedialog.askopenfile(mode='rb', initialdir=BASE_DIR) as f:
                     file, fname = f.read(), os.path.basename(f.name)
@@ -272,7 +285,8 @@ class App(ttk.Window):
                     self.listScr.searchApply()
                 else:
                     messagebox.showerror(
-                        title='Erro', message=f"Material {fname} ja cadastrado")
+                        title   = 'Erro',
+                        message = f"Material {fname} ja cadastrado")
         except TypeError:
             return
         except Exception as e:
@@ -282,6 +296,8 @@ class App(ttk.Window):
 
 
 if __name__ == "__main__":
-
-    testObj = App(title='TestApp', themename="vapor", resizable=(False, False))
-    testObj.mainloop()
+    app = App(
+        title     = 'CoD Material Parser',
+        themename = "vapor",
+        resizable = (False, False))
+    app.mainloop()
