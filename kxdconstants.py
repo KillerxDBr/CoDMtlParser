@@ -1,4 +1,5 @@
 # Constants
+DB_NAME = 'teste.db'
 COLOR         = 0x48
 NORMAL        = 0x54
 SPEC          = 0x60

@@ -3,7 +3,7 @@ import json
 import struct
 
 # TKinter
-from tkinter import IntVar, filedialog, messagebox
+from tkinter import IntVar, StringVar, filedialog, messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.scrolled import ScrolledFrame
@@ -12,7 +12,7 @@ from ttkbootstrap.scrolled import ScrolledFrame
 from sqlalchemy import asc, desc
 from Models.base import Model
 from Models.materials import Material, Normal, SpecGloss
-from main import session, BASE_DIR, DB_NAME, engine
+from main import session, BASE_DIR, engine
 
 # Misc
 # Check this file to edit surface type and spec gloss suffix
@@ -42,69 +42,68 @@ class MaterialMaker:
 
     @staticmethod
     def getTechsetArgs(techset: str):
-        tsarg = {}
+        tsArgs = {}
         for flag, value in TECHSET_FLAGS.items():
-            tsarg.update({flag: (value in techset)})
-        return tsarg
+            tsArgs.update({flag: (value in techset)})
+        return tsArgs
 
     @staticmethod
     def toGDT(mtl: Material):
-        ver  = 'CoD4'
-        path = f'texture_assets\\\\{ver}\\\\{mtl.Name}\\\\'
-        pathNormal = f'texture_assets\\\\{ver}\\\\{mtl.NormalMap.Path}\\\\'
-        pathSpec = f'texture_assets\\\\{ver}\\\\{mtl.SpecGlossMap.Path}\\\\'
+        ver         = 'CoD4'
+        path        = f'texture_assets\\\\{ver}\\\\{mtl.Name}' + r'\\'
+        pathNormal  = f'texture_assets\\\\{ver}\\\\{mtl.NormalMap.Path}' + r'\\'
+        pathSpec    = f'texture_assets\\\\{ver}\\\\{mtl.SpecGlossMap.Path}' + r'\\'
         envpars     = json.loads(mtl.EnvMapParms)
         colorTint   = json.loads(mtl.ColorTint)
         techsetArgs = json.loads(mtl.TechsetArgs)
         mtlType = 'model' if mtl.Name[:4] == 'mtl_' else 'world'
         string = (
             f'\t"{mtl.Name}" ( "material.gdf" )\n'
-            f'\t{{\n'
-            f'\t\t"template" "material.template"\n'
+             '\t{\n'
+             '\t\t"template" "material.template"\n'
             f'\t\t"materialType" "{mtlType} phong"\n'
             f'\t\t"surfaceType" "{SURFACETYPE}"\n'
             f'\t\t"envMapMin" "{envpars[0]}"\n'
             f'\t\t"envMapMax" "{envpars[1]}"\n'
             f'\t\t"envMapExponent" "{envpars[2]}"\n'
             f'\t\t"colorMap" "{path}{mtl.ColorMap}.tga"\n'
-            f'\t\t"colorTint" "{colorTint[0]} {colorTint[1]} {colorTint[2]} {colorTint[3]}"\n'
-        )
+            f'\t\t"colorTint" "{colorTint[0]} {colorTint[1]} {colorTint[2]} {colorTint[3]}"\n')
         if techsetArgs['NORMAL']:
             string += f'\t\t"normalMap" "{pathNormal}{mtl.NormalMap.Name}.tga"\n'
         else:
-            string += f'\t\t"normalMap" "$identityNormalMap"\n'
+            string += '\t\t"normalMap" "$identityNormalMap"\n'
         if techsetArgs['SPEC']:
             string += (
                 f'\t\t"specColorMap" "{pathSpec}{mtl.SpecGlossMap.SpecMap}.tga"\n'
                 f'\t\t"cosinePowerMap" "{pathSpec}{mtl.SpecGlossMap.GlossMap}.tga"\n')
         if techsetArgs['REPLACE']:
-            string += (f'\t\t"blendFunc" "Replace*"\n'
-                       f'\t\t"depthWrite" "<auto>*"\n')
+            string += ('\t\t"blendFunc" "Replace*"\n'
+                       '\t\t"depthWrite" "<auto>*"\n')
         elif techsetArgs['BLEND']:
-            string += (f'\t\t"blendFunc" "Blend"\n'
-                       f'\t\t"depthWrite" "On"\n')
+            string += ('\t\t"blendFunc" "Blend"\n'
+                       '\t\t"depthWrite" "On"\n')
         if techsetArgs['ALPHATEST']:
-            string += f'\t\t"alphaTest" "GE128"\n'
+            string += '\t\t"alphaTest" "GE128"\n'
         else:
-            string += f'\t\t"alphaTest" "Always*"\n'
-        string += f'\t}}\n'
+            string += '\t\t"alphaTest" "Always*"\n'
+        string += '\t}\n'
         return string
 
     @classmethod
     def MaterialMaker(cls, materialFile):
         commit = False
         # Offsets
-        mtlName_offset = struct.unpack('i', materialFile[0:4])[0]
-        techset_offset = struct.unpack('i', materialFile[TECHSET:TECHSET+4])[0]
-        color_offset   = struct.unpack('i', materialFile[COLOR:COLOR+4])[0]
-        normal_offset  = struct.unpack('i', materialFile[NORMAL:NORMAL+4])[0]
-        spec_offset    = struct.unpack('i', materialFile[SPEC:SPEC+4])[0]
+        mtlName_offset = struct.unpack('<I', materialFile[0:4])[0]
+        techset_offset = struct.unpack('<I', materialFile[TECHSET:TECHSET+4])[0]
+        color_offset   = struct.unpack('<I', materialFile[COLOR:COLOR+4])[0]
+        normal_offset  = struct.unpack('<I', materialFile[NORMAL:NORMAL+4])[0]
+        spec_offset    = struct.unpack('<I', materialFile[SPEC:SPEC+4])[0]
 
         newMtl = Material()
         # Texture Names
         newMtl.Name        = cls.getMtlString(materialFile, mtlName_offset)
         if Material.query.filter(Material.Name == newMtl.Name).first(): 
-            return False
+            return False, False
         newMtl.Techset     = cls.getMtlString(materialFile, techset_offset)
         newMtl.TechsetArgs = json.dumps(cls.getTechsetArgs(newMtl.Techset))
         newMtl.ColorMap    = cls.getMtlString(materialFile, color_offset)
@@ -127,8 +126,7 @@ class MaterialMaker:
                 RawSpecMap = raw_spec,
                 SpecMap    = spec,
                 GlossMap   = gloss,
-                Path       = newMtl.Name
-            )
+                Path       = newMtl.Name)
 
         nml = Normal.query.filter(Normal.Name == normal).first()
         if nml:
@@ -138,22 +136,22 @@ class MaterialMaker:
             commit = True
             newMtl.NormalMap = Normal(
                 Name = normal,
-                Path = newMtl.Name
-            )
+                Path = newMtl.Name)
 
-        envMapMin, envMapMax, envMapExponent = struct.unpack('3f',
-            bytes([int(x) for x in materialFile[ENVPARAM:ENVPARAM+12]]))
+        envMapMin, envMapMax, envMapExponent = struct.unpack(
+                    '<3f', materialFile[ENVPARAM:ENVPARAM+12])
 
         if envMapMin > envMapMax:
-            raise Exception(
-                f'envMapMin maior que envMapMax: {envMapMin:.2f} > {envMapMax:.2f}')
+            raise BaseException(
+                f'Material Invalido!!!\n\
+                envMapMin maior que envMapMax: {envMapMin:.2f} > {envMapMax:.2f}')
 
         # envMapMin, envMapMax = envMapMin/4, envMapMax/4
         newMtl.EnvMapParms = json.dumps(
             (round(envMapMin/4, 2), round(envMapMax/4, 2), round(envMapExponent, 2)))
 
-        newMtl.ColorTint = json.dumps(struct.unpack('4f', bytes(
-            [int(x) for x in materialFile[COLORTINT:COLORTINT+16]])))
+        newMtl.ColorTint = json.dumps(
+                struct.unpack('<4f', materialFile[COLORTINT:COLORTINT+16]))
 
         return newMtl, commit
 
@@ -162,6 +160,7 @@ class ListScroll(ttk.Frame):
     def __init__(self, master=None, **kwargs):
         super(ListScroll, self).__init__(master, **kwargs)
 
+        self.grid_columnconfigure(0, weight=1)
         self.entry_search = ttk.Entry(master=self)
         self.entry_search.grid(
             column = 0,
@@ -170,11 +169,19 @@ class ListScroll(ttk.Frame):
             pady   = 10)
         self.entry_search.bind('<KeyRelease>', self.searchApply)
 
+        self.orderByBool = True
+        self.orderButtonText = StringVar(value=chr(9650))
+        self.orderButton = ttk.Button(
+            master       = self,
+            textvariable = self.orderButtonText,
+            command      = self.invertBoolButton)
+        self.orderButton.grid(column=1, row=0, padx=0, pady=10,sticky = 'e')
+
         self.scrFrame = ScrolledFrame(master=self, autohide=False)
-        self.scrFrame.grid(sticky='news', column=0, pady=10, row=1)
+        self.scrFrame.grid(sticky='news', column=0, pady=10, row=1, columnspan=2)
 
         self.expDelFrame = ttk.Frame(master=self)
-        self.expDelFrame.grid(column=0, row=2, sticky='news')
+        self.expDelFrame.grid(column=0, row=2, sticky='news', columnspan=2)
 
         self.exportButton = ttk.Button(
             master    = self.expDelFrame,
@@ -184,12 +191,26 @@ class ListScroll(ttk.Frame):
         self.exportButton.grid(column=0, row=0, padx=(20,10),
                                pady=(10,0), sticky='ew')
 
+        self.editButton = ttk.Button(
+            master    = self.expDelFrame,
+            text      = 'Edit Materials',
+            bootstyle = (WARNING, OUTLINE))
+        self.editButton.grid(column=1, row=0, padx=10,
+                               pady=(10, 0), sticky='ew')
+
         self.deleteButton = ttk.Button(
             master    = self.expDelFrame,
             text      = 'Delete Materials',
             bootstyle = (DANGER, OUTLINE))
-        self.deleteButton.grid(column=1, row=0, padx=(10,20),
-                               pady=(10,0), sticky='ew')
+        self.deleteButton.grid(column=2, row=0, padx=(10, 20),
+                               pady=(10, 0), sticky='ew')
+
+    def invertBoolButton(self):
+        self.orderByBool = not self.orderByBool
+        self.orderButtonText.set(
+            f'{chr(9650) if self.orderByBool else chr(9660)}')
+        self.focus()
+        self.searchApply()
 
     def exportMtls(self):
         gdtResult = '{\n'
@@ -203,14 +224,15 @@ class ListScroll(ttk.Frame):
             f.write(gdtResult)
 
     def searchApply(self, evt=None):
-        filter = self.entry_search.get()
+        searchFilter = self.entry_search.get()
+        orderFunc = asc if self.orderByBool else desc
         for w in self.scrFrame.winfo_children():
             w.destroy()
-        if filter == '':
-            self.canvasPopulation(Material.query.order_by(Material.Name).all())
+        if searchFilter == '':
+            self.canvasPopulation(Material.query.order_by(orderFunc(Material.Name)).all())
         else:
             self.canvasPopulation(Material.query.filter(
-                Material.Name.ilike(f'%{filter}%')).order_by(asc(Material.Name)).all())
+                Material.Name.ilike(f'%{searchFilter}%')).order_by(orderFunc(Material.Name)).all())
 
     def canvasPopulation(self, mtl_list):
         for i, mtl in enumerate(mtl_list):
@@ -250,20 +272,30 @@ class App(ttk.Window):
             command   = self.selectFileDialog)
         self.selectFile.grid(column=2, row=0, padx=10, pady=10, sticky='ew')
 
-        self.listScr = ListScroll(master=self.frame)
-        self.listScr.grid(column=3, row=0, rowspan=10, padx=(10, 20), pady=10)
+        self.CoDVersionVar = ttk.StringVar()
+        self.CoDVersion = ttk.Combobox(
+            master       = self.frame,
+            state        = 'readonly',
+            values       = ['CoD Version', 'CoD4', 'CoD5', 'BO1'],
+            textvariable = self.CoDVersionVar,
+            bootstyle    = LIGHT)
+        self.CoDVersion.current(0)
+        self.CoDVersion.grid(column=3, row=0)
 
-        self.listScr.canvasPopulation(
-            Material.query.order_by(Material.Name).all())
+        self.listScr = ListScroll(master=self.frame)
+        self.listScr.grid(column=4, row=0, rowspan=10, padx=(10, 20), pady=10)
+
+        self.listScr.searchApply()
 
     def selectFileDialog(self):
         try:
             if self.rbVar.get():
-                dir = filedialog.askdirectory(initialdir=BASE_DIR)
-                for fname in os.listdir(dir):
-                    with open(f'{dir}/{fname}', 'rb') as f:
+                fdir = filedialog.askdirectory(initialdir=BASE_DIR)
+                for fname in os.listdir(fdir):
+                    with open(f'{fdir}/{fname}', 'rb') as f:
                         fread = f.read()
-                        if fname != MaterialMaker.getMtlString(fread, struct.unpack('i', fread[0:4])[0]):
+                        if fname != MaterialMaker.getMtlString(
+                            fread, struct.unpack('<I', fread[0:4])[0]):
                             continue
                         material, commit = MaterialMaker.MaterialMaker(fread)
                         if material:
@@ -275,10 +307,11 @@ class App(ttk.Window):
             else:
                 with filedialog.askopenfile(mode='rb', initialdir=BASE_DIR) as f:
                     file, fname = f.read(), os.path.basename(f.name)
-                if fname != MaterialMaker.getMtlString(file, struct.unpack('i', file[0:4])[0]):
-                    raise Exception(
-                        'File name and Material name dont match\nMaterial file invalid!!!')
-                mtl = MaterialMaker.MaterialMaker(file)
+                if fname != MaterialMaker.getMtlString(file, struct.unpack('<I', file[0:4])[0]):
+                    raise BaseException(
+                        'File name and Material name dont match\n\
+                            Material file invalid!!!')
+                mtl = MaterialMaker.MaterialMaker(file)[0]
                 if mtl:
                     session.add(mtl)
                     session.commit()
@@ -289,9 +322,10 @@ class App(ttk.Window):
                         message = f"Material {fname} ja cadastrado")
         except TypeError:
             return
-        except Exception as e:
+        except BaseException as e:
             messagebox.showerror(
-                title='Erro', message=f'ocorreu um erro nao tratado!!!\n{e}')
+                title   = 'Erro',
+                message = f'ocorreu um erro nao tratado!!!\n{e}')
             return
 
 
