@@ -140,11 +140,12 @@ class MaterialMaker:
 
         envMapMin, envMapMax, envMapExponent = struct.unpack(
                     '<3f', materialFile[ENVPARAM:ENVPARAM+12])
-
-        if envMapMin > envMapMax:
-            raise BaseException(
-                f'Material Invalido!!!\n\
-                envMapMin maior que envMapMax: {envMapMin:.2f} > {envMapMax:.2f}')
+        
+        # USELESS, asset manager already does that...
+        # if envMapMin > envMapMax:
+        #     raise BaseException(
+        #         f'Material Invalido!!!\n\
+        #         envMapMin maior que envMapMax: {envMapMin:.2f} > {envMapMax:.2f}')
 
         # envMapMin, envMapMax = envMapMin/4, envMapMax/4
         newMtl.EnvMapParms = json.dumps(
