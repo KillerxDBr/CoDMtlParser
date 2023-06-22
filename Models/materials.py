@@ -1,19 +1,22 @@
 
 from typing import List
 from sqlalchemy.orm import Relationship, Mapped
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, ForeignKey, Integer, Null, String
 from Models.base import Model
 
 
 class Material(Model):
     __tablename__ = 'materials'
     Id            = Column(Integer, primary_key=True)
+    CodVersion    = Column(Integer, nullable=False, default=0)
     Name          = Column(String, unique=True, nullable=False)
     Techset       = Column(String, nullable=False)
     TechsetArgs   = Column(String, nullable=False)
     ColorMap      = Column(String, nullable=False)
     EnvMapParms   = Column(String, nullable=False)  # Convert array to json
     ColorTint     = Column(String, nullable=False)  # Convert array to json
+    SurfaceType   = Column(String, nullable=False, default='<none>')
+    Properties    = Column(String)
 
     Normal_Id = Column(Integer, ForeignKey('normals.Id'),
                        nullable=False, unique=False, index=True)

@@ -1,6 +1,6 @@
-import os
 import json
 import struct
+from pathlib import Path
 
 # TKinter
 from tkinter import IntVar, StringVar, filedialog, messagebox
@@ -9,7 +9,7 @@ from ttkbootstrap.constants import *
 from ttkbootstrap.scrolled import ScrolledFrame
 
 # SQLAlchemy
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, event
 from Models.base import Model
 from Models.materials import Material, Normal, SpecGloss
 from main import session, BASE_DIR, engine
@@ -18,9 +18,8 @@ from main import session, BASE_DIR, engine
 # Check this file to edit surface type and spec gloss suffix
 from kxdconstants import *
 
-Model.metadata.create_all(engine)
-
-if not Normal.query.filter(Normal.Name == '$identitynormalmap').first():
+@event.listens_for(Normal.__table__, 'after_create')
+def addDefaultNormalMap(target, connection, **kw):
     identity      = Normal()
     identity.Name = '$identitynormalmap'
     identity.Path = 'Default Image'
@@ -28,10 +27,11 @@ if not Normal.query.filter(Normal.Name == '$identitynormalmap').first():
     session.add(identity)
     session.commit()
 
+Model.metadata.create_all(engine)
 
-class MaterialMaker:
+class MaterialMaker:   
     @staticmethod
-    def getMtlString(mtl, offset):
+    def getMtlString(mtl:bytes, offset:int) -> str:
         # print(offset)
         string = ''
         while (mtl[offset] != 0x00):
@@ -48,49 +48,53 @@ class MaterialMaker:
         return tsArgs
 
     @staticmethod
-    def toGDT(mtl: Material):
-        ver         = 'CoD4'
-        path        = f'texture_assets\\\\{ver}\\\\{mtl.Name}' + r'\\'
-        pathNormal  = f'texture_assets\\\\{ver}\\\\{mtl.NormalMap.Path}' + r'\\'
-        pathSpec    = f'texture_assets\\\\{ver}\\\\{mtl.SpecGlossMap.Path}' + r'\\'
-        envpars     = json.loads(mtl.EnvMapParms)
-        colorTint   = json.loads(mtl.ColorTint)
+    def toGDT(mtl: Material) -> str:
+        CoDVer      = 'CoD4'
+        path        = f'texture_assets\\\\{CoDVer}\\\\{mtl.Name}' + r'\\'
+        pathNormal  = f'texture_assets\\\\{CoDVer}\\\\{mtl.NormalMap.Path}' + r'\\'
+        pathSpec    = f'texture_assets\\\\{CoDVer}\\\\{mtl.SpecGlossMap.Path}' + r'\\'
+        envPars     = json.loads(mtl.EnvMapParms)
+        colorTint   = ' '.join(str(x) for x in json.loads(mtl.ColorTint))
         techsetArgs = json.loads(mtl.TechsetArgs)
-        mtlType = 'model' if mtl.Name[:4] == 'mtl_' else 'world'
-        string = (
+        surfProps   = json.loads(mtl.Properties) if mtl.Properties else None
+        mtlType     = 'model' if mtl.Name[:4] == 'mtl_' else 'world'
+        gdtEntry = (
             f'\t"{mtl.Name}" ( "material.gdf" )\n'
              '\t{\n'
              '\t\t"template" "material.template"\n'
             f'\t\t"materialType" "{mtlType} phong"\n'
-            f'\t\t"surfaceType" "{SURFACETYPE}"\n'
-            f'\t\t"envMapMin" "{envpars[0]}"\n'
-            f'\t\t"envMapMax" "{envpars[1]}"\n'
-            f'\t\t"envMapExponent" "{envpars[2]}"\n'
+            f'\t\t"surfaceType" "{mtl.SurfaceType}"\n'
+            f'\t\t"envMapMin" "{envPars[0]}"\n'
+            f'\t\t"envMapMax" "{envPars[1]}"\n'
+            f'\t\t"envMapExponent" "{envPars[2]}"\n'
             f'\t\t"colorMap" "{path}{mtl.ColorMap}.tga"\n'
-            f'\t\t"colorTint" "{colorTint[0]} {colorTint[1]} {colorTint[2]} {colorTint[3]}"\n')
+            f'\t\t"colorTint" "{colorTint}"\n')
+        if surfProps:
+            for prop in surfProps:
+                gdtEntry += f'\t\t"{prop}" "1"\n'
         if techsetArgs['NORMAL']:
-            string += f'\t\t"normalMap" "{pathNormal}{mtl.NormalMap.Name}.tga"\n'
+            gdtEntry += f'\t\t"normalMap" "{pathNormal}{mtl.NormalMap.Name}.tga"\n'
         else:
-            string += '\t\t"normalMap" "$identityNormalMap"\n'
+            gdtEntry += '\t\t"normalMap" "$identityNormalMap"\n'
         if techsetArgs['SPEC']:
-            string += (
+            gdtEntry += (
                 f'\t\t"specColorMap" "{pathSpec}{mtl.SpecGlossMap.SpecMap}.tga"\n'
                 f'\t\t"cosinePowerMap" "{pathSpec}{mtl.SpecGlossMap.GlossMap}.tga"\n')
         if techsetArgs['REPLACE']:
-            string += ('\t\t"blendFunc" "Replace*"\n'
+            gdtEntry += ('\t\t"blendFunc" "Replace*"\n'
                        '\t\t"depthWrite" "<auto>*"\n')
         elif techsetArgs['BLEND']:
-            string += ('\t\t"blendFunc" "Blend"\n'
+            gdtEntry += ('\t\t"blendFunc" "Blend"\n'
                        '\t\t"depthWrite" "On"\n')
         if techsetArgs['ALPHATEST']:
-            string += '\t\t"alphaTest" "GE128"\n'
+            gdtEntry += '\t\t"alphaTest" "GE128"\n'
         else:
-            string += '\t\t"alphaTest" "Always*"\n'
-        string += '\t}\n'
-        return string
+            gdtEntry += '\t\t"alphaTest" "Always*"\n'
+        gdtEntry += '\t}\n'
+        return gdtEntry
 
     @classmethod
-    def MaterialMaker(cls, materialFile):
+    def MaterialMaker(cls, materialFile:bytes) -> tuple[Material|bool, bool]:
         commit = False
         # Offsets
         mtlName_offset = struct.unpack('<I', materialFile[0:4])[0]
@@ -102,7 +106,7 @@ class MaterialMaker:
         newMtl = Material()
         # Texture Names
         newMtl.Name        = cls.getMtlString(materialFile, mtlName_offset)
-        if Material.query.filter(Material.Name == newMtl.Name).first(): 
+        if Material.query.filter(Material.Name == newMtl.Name).first() or newMtl.Name[0:3] == 'gfx_': 
             return False, False
         newMtl.Techset     = cls.getMtlString(materialFile, techset_offset)
         newMtl.TechsetArgs = json.dumps(cls.getTechsetArgs(newMtl.Techset))
@@ -140,7 +144,7 @@ class MaterialMaker:
 
         envMapMin, envMapMax, envMapExponent = struct.unpack(
                     '<3f', materialFile[ENVPARAM:ENVPARAM+12])
-        
+
         # USELESS, asset manager already does that...
         # if envMapMin > envMapMax:
         #     raise BaseException(
@@ -153,6 +157,26 @@ class MaterialMaker:
 
         newMtl.ColorTint = json.dumps(
                 struct.unpack('<4f', materialFile[COLORTINT:COLORTINT+16]))
+        
+        surfaceTypeProps: int = struct.unpack('<I', materialFile[0x20:0x24])[0]
+
+
+        for surfType in SURFACETYPES:
+            if surfaceTypeProps - surfType[1] >= 0:
+                newMtl.SurfaceType = surfType[0]
+                surfaceTypeProps -= surfType[1]
+            if surfaceTypeProps <= 0:
+                break
+
+        props = []
+        for surfProp in SURFACEPROPS:
+            if surfProp[1] > 0 and surfaceTypeProps - surfProp[1] >= 0:
+                props.append(surfProp[0])
+                surfaceTypeProps -= surfProp[1]
+            if surfaceTypeProps <= 0:
+                break
+        if props:
+            newMtl.Properties = json.dumps(props)
 
         return newMtl, commit
 
@@ -271,56 +295,88 @@ class App(ttk.Window):
             text      = '...',
             bootstyle = (SECONDARY, OUTLINE),
             command   = self.selectFileDialog)
-        self.selectFile.grid(column=2, row=0, padx=10, pady=10, sticky='ew')
+        self.selectFile.grid(column=3, row=0, padx=10, pady=10, sticky='ew')
 
         self.CoDVersionVar = ttk.StringVar()
         self.CoDVersion = ttk.Combobox(
             master       = self.frame,
             state        = 'readonly',
-            values       = ['CoD Version', 'CoD4', 'CoD5', 'BO1'],
+            values       = CODVERSIONS,
             textvariable = self.CoDVersionVar,
             bootstyle    = LIGHT)
-        self.CoDVersion.current(0)
-        self.CoDVersion.grid(column=3, row=0)
+        self.CoDVersion.set('CoD Version')
+        self.CoDVersion.grid(column=2, row=0, padx=10, pady=10, sticky='ew')
 
         self.listScr = ListScroll(master=self.frame)
-        self.listScr.grid(column=4, row=0, rowspan=10, padx=(10, 20), pady=10)
+        self.listScr.grid(column=4, row=0, rowspan=10,
+                          padx=(10, 20), pady=10, sticky='ew')
 
         self.listScr.searchApply()
 
     def selectFileDialog(self):
         try:
             if self.rbVar.get():
-                fdir = filedialog.askdirectory(initialdir=BASE_DIR)
-                for fname in os.listdir(fdir):
-                    with open(f'{fdir}/{fname}', 'rb') as f:
-                        fread = f.read()
-                        if fname != MaterialMaker.getMtlString(
-                            fread, struct.unpack('<I', fread[0:4])[0]):
+                errorList = []
+                fDir: Path = Path(filedialog.askdirectory(initialdir=BASE_DIR))
+                if not fDir.is_dir() or not fDir.exists():
+                    return
+                for fName in fDir.iterdir():
+                    if not fName.is_file():
+                        continue
+                    with fName.open(mode='rb') as f:
+                        fRead = f.read()
+                        try:
+                            if fName.name != MaterialMaker.getMtlString(
+                                    fRead, struct.unpack('<I', fRead[0:4])[0]):
+                                errorList.append(fName.name)
+                                continue
+                        except:
+                            errorList.append(fName.name)
                             continue
-                        material, commit = MaterialMaker.MaterialMaker(fread)
+                        try:
+                            material, commit = MaterialMaker.MaterialMaker(
+                                fRead)
+                        except:
+                            material = False
                         if material:
                             session.add(material)
                             if commit:
                                 session.commit()
+                        else:
+                            errorList.append(fName.name)
                 session.commit()
+                if errorList:
+                    errorString = '\n'.join(errorList)
+                    messagebox.showwarning(
+                        title   = 'Warning',
+                        message = (f'Some material files were not added to the database:\n{errorString}'))
                 self.listScr.searchApply()
             else:
-                with filedialog.askopenfile(mode='rb', initialdir=BASE_DIR) as f:
-                    file, fname = f.read(), os.path.basename(f.name)
-                if fname != MaterialMaker.getMtlString(file, struct.unpack('<I', file[0:4])[0]):
-                    raise BaseException(
-                        'File name and Material name dont match\n\
-                            Material file invalid!!!')
-                mtl = MaterialMaker.MaterialMaker(file)[0]
-                if mtl:
-                    session.add(mtl)
+                selectedFile: Path = Path(
+                    filedialog.askopenfilename(initialdir=BASE_DIR))
+                if not selectedFile.is_file() or not selectedFile.exists():
+                    messagebox.showerror(
+                        title   = 'Erro',
+                        message = f"{selectedFile.name} is NOT a file!")
+                    return
+                with selectedFile.open(mode='rb') as f:
+                    file = f.read()
+                try:
+                    if selectedFile.name != MaterialMaker.getMtlString(file,
+                                                            struct.unpack('<I', file[0:4])[0]):
+                        material = False
+                    else:
+                        material, = MaterialMaker.MaterialMaker(file)
+                except:
+                    material = False
+                if material:
+                    session.add(material)
                     session.commit()
                     self.listScr.searchApply()
                 else:
                     messagebox.showerror(
                         title   = 'Erro',
-                        message = f"Material {fname} ja cadastrado")
+                        message = f"Material {selectedFile.name} invalido ou ja cadastrado")
         except TypeError:
             return
         except BaseException as e:
